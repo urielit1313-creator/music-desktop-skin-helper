@@ -1,0 +1,66 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>player</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:transparent}
+  #wrap{position:fixed;inset:0;overflow:hidden}
+  /* cover-fit a 16:9 player and crop YouTube's chrome. The frame sits a little low so the bottom ~16% of the
+     video is off-screen: many official videos burn subtitles in there, and they would fight with our lyrics */
+  #p{position:absolute;left:50%;top:50%;width:100vw;height:56.25vw;min-width:177.78vh;min-height:100vh;transform:translate(-50%,-41.5%) scale(1.22);pointer-events:none;border:0}
+</style></head>
+<body><div id="wrap"><div id="p"></div></div>
+<script>
+  // Hosts the YouTube player from http://localhost so embeds get a valid origin.
+  let capChecks = 0, player, ready = false, ids = [], idx = 0, want = { t: 0, playing: true, sync: true }, curKey = '';
+  const post = (m) => parent.postMessage(Object.assign({ src: 'msplayer' }, m), '*');
+  window.onYouTubeIframeAPIReady = () => {
+    post({ type: 'state', key: 'api' });
+    player = new YT.Player('p', {
+      playerVars: { origin: location.origin, enablejsapi: 1, autoplay: 1, mute: 1, controls: 0, disablekb: 1, fs: 0, iv_load_policy: 3, modestbranding: 1, playsinline: 1, rel: 0, cc_load_policy: 0, cc_lang_pref: 'zz' },
+      events: {
+        onReady: () => { post({ type: 'state', key: 'onready' }); ready = true; player.mute(); if (ids.length) load(); },
+        onApiChange: () => noCaptions(), // YouTube loads its captions module late; switch it off when it appears
+        onError: (e) => { post({ type: 'err', key: 'e' + e.data + ':' + ids[idx] }); idx++; if (idx < ids.length) load(); else post({ type: 'failed', key: curKey }); },
+        onStateChange: (e) => {
+          post({ type: 'state', key: 's' + e.data });
+          // some music videos force subtitles on: switch them off so they never cover the widgets
+          if (e.data === YT.PlayerState.PLAYING) { noCaptions(); post({ type: 'playing', key: curKey }); }
+          if (e.data === YT.PlayerState.ENDED && !want.sync) player.seekTo(0);
+        },
+      },
+    });
+    try { const f = player.getIframe(); post({ type: 'state', key: 'if:' + String(f.src).slice(0, 60) }); f.addEventListener('load', () => post({ type: 'state', key: 'ifload' })); } catch (e) { post({ type: 'state', key: 'iferr' }); }
+  };
+  function noCaptions() {
+    try { player.setOption('captions', 'track', {}); } catch (e) {}
+    try { player.unloadModule('captions'); } catch (e) {}
+    try { player.unloadModule('cc'); } catch (e) {}
+  }
+  function load() {
+    if (!ready) return;
+    capChecks = 0;
+    player.loadVideoById({ videoId: ids[idx], startSeconds: want.sync ? Math.max(0, want.t) : 0 });
+    player.mute();
+  }
+  setInterval(() => {
+    if (!ready || !ids.length) return;
+    const st = player.getPlayerState();
+    if (st === 1 && capChecks < 15) { capChecks++; noCaptions(); }
+    if (want.playing && st !== 1 && st !== 3) player.playVideo();
+    if (!want.playing && st === 1) player.pauseVideo();
+    if (want.sync && want.playing && st === 1) {
+      const d = player.getCurrentTime() - want.t;
+      if (Math.abs(d) > 1.6 && want.t < player.getDuration() - 1) player.seekTo(want.t, true);
+    }
+  }, 700);
+  addEventListener('message', (e) => {
+    const m = e.data || {};
+    if (m.type === 'load') { curKey = m.key; ids = m.ids || []; idx = 0; want.t = m.t || 0; if (ids.length) load(); else if (ready) player.stopVideo(); }
+    if (m.type === 'sync') { want.t = m.t; want.playing = m.playing; want.sync = m.sync !== false; }
+    if (m.type === 'stop' && ready) { ids = []; player.stopVideo(); }
+  });
+  const s = document.createElement('script'); s.src = 'https://www.youtube.com/iframe_api';
+  s.onload = () => post({ type: 'state', key: 'apijs' }); s.onerror = () => post({ type: 'state', key: 'apijs-fail' });
+  window.onerror = (m) => post({ type: 'state', key: 'jserr:' + String(m).slice(0, 80) });
+  document.head.appendChild(s);
+  post({ type: 'hello' });
+</script></body></html>

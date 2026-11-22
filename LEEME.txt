@@ -1,0 +1,10 @@
+MUSIC DESKTOP SKIN - AYUDANTE
+
+1. Descomprime este archivo (clic derecho > Extraer todo).
+2. Doble clic en INSTALAR.bat
+   Si Windows dice "Windows protegio su PC": Mas informacion > Ejecutar de todas formas.
+3. Listo. Se instala todo solo (letras, controles, lista y videos) y arranca con Windows.
+   Ya puedes borrar esta carpeta descargada.
+
+Para quitarlo: borra %LOCALAPPDATA%\MusicSkin y el acceso
+"MusicSkin Helper" de la carpeta de Inicio (Win+R > shell:startup).
