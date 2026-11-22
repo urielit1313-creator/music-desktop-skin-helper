@@ -1,10 +1,61 @@
-MUSIC DESKTOP SKIN - AYUDANTE
+============================================================
+  MUSIC DESKTOP SKIN  -  AYUDANTE
+============================================================
 
-1. Descomprime este archivo (clic derecho > Extraer todo).
+Este ayudante conecta el fondo "Music Desktop Skin" de
+Wallpaper Engine con tu Spotify. Sin el, el fondo solo
+muestra reloj, colores y neon.
+
+Con el ayudante tienes:
+  - Letras en vivo, sincronizadas con la cancion.
+  - El video oficial de la cancion de fondo, en HD.
+  - Tu lista de canciones (pica una y suena en Spotify).
+  - Controles: pausa, siguiente, volumen y buscador.
+
+------------------------------------------------------------
+COMO INSTALARLO (1 minuto, solo una vez)
+------------------------------------------------------------
+1. Si estas leyendo esto dentro del zip sin extraer:
+   cierra, clic derecho a MusicSkinHelper.zip >
+   Extraer todo > Extraer, y entra a la carpeta extraida.
 2. Doble clic en INSTALAR.bat
-   Si Windows dice "Windows protegio su PC": Mas informacion > Ejecutar de todas formas.
-3. Listo. Se instala todo solo (letras, controles, lista y videos) y arranca con Windows.
-   Ya puedes borrar esta carpeta descargada.
+   Si Windows pregunta: pulsa "Ejecutar".
+   Si sale "Windows protegio su PC":
+   "Mas informacion" > "Ejecutar de todas formas".
+   (Sale porque el instalador es nuevo y no esta firmado.)
+3. Espera a que la ventana diga LISTO.
+4. Abre Spotify (la app para PC) y pon musica.
 
-Para quitarlo: borra %LOCALAPPDATA%\MusicSkin y el acceso
-"MusicSkin Helper" de la carpeta de Inicio (Win+R > shell:startup).
+Luego puedes borrar el zip y esta carpeta: el ayudante
+queda instalado en tu PC y arranca solo con Windows.
+
+------------------------------------------------------------
+QUE SE INSTALA
+------------------------------------------------------------
+  - El ayudante (en %LOCALAPPDATA%\MusicSkin\helper)
+  - yt-dlp: busca el video oficial de cada cancion en HD.
+  - FFmpeg: deja los videos nitidos y sin franjas negras.
+  yt-dlp y FFmpeg son programas gratuitos y conocidos; se
+  instalan con "winget", el instalador oficial de Windows.
+
+Todo funciona en tu PC. No se envian tus datos a ningun lado.
+El codigo esta abierto en:
+github.com/urielit1313-creator/music-desktop-skin-helper
+
+------------------------------------------------------------
+SI ALGO NO FUNCIONA
+------------------------------------------------------------
+  - No salen letras ni video: usa la app de Spotify para PC
+    (la pagina web de Spotify no funciona con el fondo).
+  - Sigue saliendo la pantalla negra: reinicia la PC o abre
+    otra vez INSTALAR.bat.
+  - No salen videos: revisa tu internet y abre otra vez
+    INSTALAR.bat (instala yt-dlp y FFmpeg).
+
+------------------------------------------------------------
+PARA QUITARLO
+------------------------------------------------------------
+  1. Win + R, escribe  shell:startup  y Enter.
+     Borra "MusicSkin Helper".
+  2. Win + R, escribe  %LOCALAPPDATA%  y Enter.
+     Borra la carpeta "MusicSkin".
