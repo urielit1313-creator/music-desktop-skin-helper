@@ -318,7 +318,8 @@ while ($listener.IsListening) {
         $id = "$($q['id'])"
         if (-not $Ytdlp -or $id -notmatch '^[\w-]{11}$') { SendJson $ctx @{ ok = $false; error = 'no-ytdlp' } }
         else {
-          $uf = Join-Path $CacheDir "$id.json"
+          $hq = 1440; if ("$($q['h'])" -match '^(1080|1440|2160)$') { $hq = [int]$q['h'] }
+          $uf = Join-Path $CacheDir "$id-$hq.json"
           $fresh = (Test-Path -LiteralPath $uf) -and ((Get-Date) - (Get-Item -LiteralPath $uf).LastWriteTime).TotalHours -lt 4
           if ($fresh) {
             $MvJobs.Remove($id)
@@ -329,7 +330,7 @@ while ($listener.IsListening) {
             else {
               if (-not $pr) {
                 $job = Join-Path $Root 'mvjob.ps1'
-                $MvJobs[$id] = Start-Process powershell.exe -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', "`"$job`"", '-Id', $id, '-Out', "`"$uf`"", '-Ytdlp', "`"$Ytdlp`"", '-Ffmpeg', "`"$Ffmpeg`"") -WindowStyle Hidden -PassThru
+                $MvJobs[$id] = Start-Process powershell.exe -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', "`"$job`"", '-Id', $id, '-Out', "`"$uf`"", '-Ytdlp', "`"$Ytdlp`"", '-Ffmpeg', "`"$Ffmpeg`"", '-H', "$hq") -WindowStyle Hidden -PassThru
               }
               SendJson $ctx @{ ok = $true; pending = $true }
             }
