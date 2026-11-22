@@ -92,6 +92,7 @@ function Get-Status {
     album = if ($props) { $props.AlbumTitle } else { '' }
     playing = $playing
     shuffle = [bool]$pi.IsShuffleActive
+    repeat = "$($pi.AutoRepeatMode)"   # None / List (repeat all) / Track (repeat one)
     position = [math]::Round($pos, 2)
     duration = [math]::Round($dur, 2)
   }
@@ -104,7 +105,14 @@ function Invoke-Cmd($a, $q) {
     'next'      { if ($s) { Await ($s.TrySkipNextAsync()) ([bool]) | Out-Null } else { [MSKeys]::Press(0xB0) } }
     'prev'      { if ($s) { Await ($s.TrySkipPreviousAsync()) ([bool]) | Out-Null } else { [MSKeys]::Press(0xB1) } }
     'shuffle'   { if ($s) { $cur = [bool]$s.GetPlaybackInfo().IsShuffleActive; Await ($s.TryChangeShuffleActiveAsync(-not $cur)) ([bool]) | Out-Null } }
-    'seek'      { if ($s) { $t = [double]$q['pos']; Await ($s.TryChangePlaybackPositionAsync([long]($t * 10000000))) ([bool]) | Out-Null } }
+    'repeat'    {
+      # same cycle as Spotify's button: off → repeat all → repeat this song → off
+      if ($s) {
+        $cur = "$($s.GetPlaybackInfo().AutoRepeatMode)"
+        $next = switch ($cur) { 'None' { 'List' } 'List' { 'Track' } default { 'None' } }
+        Await ($s.TryChangeAutoRepeatModeAsync([Windows.Media.MediaPlaybackAutoRepeatMode]::$next)) ([bool]) | Out-Null
+      }
+    }    'seek'      { if ($s) { $t = [double]$q['pos']; Await ($s.TryChangePlaybackPositionAsync([long]($t * 10000000))) ([bool]) | Out-Null } }
     'volup'     { [MSKeys]::Press(0xAF); [MSKeys]::Press(0xAF) }
     'voldown'   { [MSKeys]::Press(0xAE); [MSKeys]::Press(0xAE) }
     'mute'      { [MSKeys]::Press(0xAD) }
