@@ -132,7 +132,9 @@ function Search-YouTube($q) {
     $id = [regex]::Match($c, '^"videoId":"([\w-]{11})"')
     $ti = [regex]::Match($c, '"title":\{"runs":\[\{"text":"((?:[^"\\]|\\.)*)"')
     $ch = [regex]::Match($c, '"ownerText":\{"runs":\[\{"text":"((?:[^"\\]|\\.)*)"')
-    if ($id.Success -and $ti.Success) { $items += @{ id = $id.Groups[1].Value; title = $ti.Groups[1].Value; channel = $ch.Groups[1].Value } }
+    $ln = [regex]::Match($c, '"lengthText":\{[^}]*?"simpleText":"([\d:]+)"'); $sec = 0
+    if ($ln.Success) { foreach ($p in $ln.Groups[1].Value.Split(':')) { $sec = $sec * 60 + [int]$p } }
+    if ($id.Success -and $ti.Success) { $items += @{ id = $id.Groups[1].Value; title = $ti.Groups[1].Value; channel = $ch.Groups[1].Value; dur = $sec } }
   }
   $res = @{ ok = $true; ids = $ids; items = $items }
   $ytCache[$q] = $res
@@ -166,7 +168,7 @@ function Find-Tool($n) {
 $Ffmpeg = Find-Tool ffmpeg
 $Converting = @{}
 $Ytdlp = Find-Tool yt-dlp
-$MvJobs = @{}
+$MvJobs = @{}; $SubJobs = @{}
 function Start-Webm($src, $dst) {
   if ($Converting[$dst]) { return }
   $Converting[$dst] = $true
@@ -328,6 +330,26 @@ while ($listener.IsListening) {
               if (-not $pr) {
                 $job = Join-Path $Root 'mvjob.ps1'
                 $MvJobs[$id] = Start-Process powershell.exe -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', "`"$job`"", '-Id', $id, '-Out', "`"$uf`"", '-Ytdlp', "`"$Ytdlp`"", '-Ffmpeg', "`"$Ffmpeg`"") -WindowStyle Hidden -PassThru
+              }
+              SendJson $ctx @{ ok = $true; pending = $true }
+            }
+          }
+        }
+      }
+      '/subs'   {
+        # timed lyrics from the song video's own captions, for songs the lyrics database has no timings for
+        $id = "$($q['id'])"
+        if (-not $Ytdlp -or $id -notmatch '^[\w-]{11}$') { SendJson $ctx @{ ok = $false; error = 'no-ytdlp' } }
+        else {
+          $sf = Join-Path $CacheDir "$id.subs.json"
+          if (Test-Path -LiteralPath $sf) { $SubJobs.Remove($id); Send $ctx 200 'application/json; charset=utf-8' ([IO.File]::ReadAllBytes($sf)) }
+          else {
+            $pr = $SubJobs[$id]
+            if ($pr -and $pr.HasExited) { $SubJobs.Remove($id); SendJson $ctx @{ ok = $false; error = 'failed' } }
+            else {
+              if (-not $pr) {
+                $job = Join-Path $Root 'subsjob.ps1'
+                $SubJobs[$id] = Start-Process powershell.exe -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', "`"$job`"", '-Id', $id, '-Out', "`"$sf`"", '-Ytdlp', "`"$Ytdlp`"") -WindowStyle Hidden -PassThru
               }
               SendJson $ctx @{ ok = $true; pending = $true }
             }
