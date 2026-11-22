@@ -31,10 +31,15 @@ public static class MSScreen {
   [DllImport("user32.dll")] static extern bool GetMonitorInfo(IntPtr m, ref MONITORINFO i);
   [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr h, System.Text.StringBuilder s, int n);
   [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
+  [DllImport("user32.dll")] static extern bool IsZoomed(IntPtr h);
+  [DllImport("user32.dll")] static extern int GetWindowLong(IntPtr h, int i);
   public static bool Fullscreen() {
     IntPtr h = GetForegroundWindow(); if (h == IntPtr.Zero || !IsWindowVisible(h)) return false;
     var sb = new System.Text.StringBuilder(64); GetClassName(h, sb, 64); string c = sb.ToString();
     if (c == "Progman" || c == "WorkerW" || c == "Shell_TrayWnd" || c == "Shell_SecondaryTrayWnd") return false; // the desktop itself
+    // a maximized window (title bar, taskbar visible) is not fullscreen: only borderless windows that cover the monitor are
+    if (IsZoomed(h)) return false;
+    if ((GetWindowLong(h, -16) & 0x00C00000) == 0x00C00000) return false;
     RECT r; if (!GetWindowRect(h, out r)) return false;
     var mi = new MONITORINFO(); mi.cb = Marshal.SizeOf(mi);
     if (!GetMonitorInfo(MonitorFromWindow(h, 2), ref mi)) return false;
