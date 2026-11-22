@@ -140,7 +140,7 @@ function Search-YouTube($q) {
     $id = [regex]::Match($c, '^"videoId":"([\w-]{11})"')
     $ti = [regex]::Match($c, '"title":\{"runs":\[\{"text":"((?:[^"\\]|\\.)*)"')
     $ch = [regex]::Match($c, '"ownerText":\{"runs":\[\{"text":"((?:[^"\\]|\\.)*)"')
-    $ln = [regex]::Match($c, '"lengthText":\{[^}]*?"simpleText":"([\d:]+)"'); $sec = 0
+    $ln = [regex]::Match($c, '"lengthText":\{.{0,400}?"simpleText":"(\d+(?::\d+)+)"'); $sec = 0
     if ($ln.Success) { foreach ($p in $ln.Groups[1].Value.Split(':')) { $sec = $sec * 60 + [int]$p } }
     if ($id.Success -and $ti.Success) { $items += @{ id = $id.Groups[1].Value; title = $ti.Groups[1].Value; channel = $ch.Groups[1].Value; dur = $sec } }
   }
@@ -328,6 +328,8 @@ while ($listener.IsListening) {
         else {
           $hq = 1440; if ("$($q['h'])" -match '^(1080|1440|2160)$') { $hq = [int]$q['h'] }
           $uf = Join-Path $CacheDir "$id-$hq.json"
+          # the wallpaper says the saved link stopped working (YouTube links can expire early): get a new one
+          if ("$($q['fresh'])" -eq '1') { Remove-Item -LiteralPath $uf -Force -ErrorAction SilentlyContinue; $MvJobs.Remove($id) }
           $fresh = (Test-Path -LiteralPath $uf) -and ((Get-Date) - (Get-Item -LiteralPath $uf).LastWriteTime).TotalHours -lt 4
           if ($fresh) {
             $MvJobs.Remove($id)
