@@ -1,4 +1,4 @@
-# MusicSkin helper — tiny local server the wallpaper talks to (http://localhost:47800)
+﻿# MusicSkin helper — tiny local server the wallpaper talks to (http://localhost:47800)
 # Gives the wallpaper what Wallpaper Engine can't: media controls, shuffle, seek, volume,
 # opening songs on Spotify / YouTube Music / SoundCloud…, YouTube music-video lookup and a search box.
 # Listens on localhost only. Run hidden via start-helper.vbs.
@@ -57,8 +57,9 @@ $MgrType = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManag
 $Mgr = Await ($MgrType::RequestAsync()) $MgrType
 
 function Get-Session {
-  $all = @($Mgr.GetSessions())
-  # Only music apps count — Spotify first (playing, then paused). Browser videos (YouTube, TikTok…) are never used.
+  # Never read browser tabs/PWAs (YouTube, TikTok, etc.); only dedicated music apps (Spotify first).
+  $browsers = 'chrome|msedge|firefox|brave|opera|vivaldi|waterfox|zen|arc|iexplore'
+  $all = @($Mgr.GetSessions()) | Where-Object { $_.SourceAppUserModelId -notmatch $browsers }
   $sp = $all | Where-Object { $_.SourceAppUserModelId -match 'Spotify' }
   $s1 = $sp | Where-Object { $_.GetPlaybackInfo().PlaybackStatus -eq 'Playing' } | Select-Object -First 1
   if ($s1) { return $s1 }
@@ -77,6 +78,12 @@ function Get-Status {
   $pi = $s.GetPlaybackInfo(); $tl = $s.GetTimelineProperties()
   $props = $null
   try { $props = Await ($s.TryGetMediaPropertiesAsync()) ([Windows.Media.Control.GlobalSystemMediaTransportControlsSessionMediaProperties]) } catch {}
+  $title = if ($props) { "$($props.Title)" } else { '' }
+  $artist = if ($props) { "$($props.Artist)" } else { '' }
+  # Ignore Spotify ads / empty metadata so they never replace a song or pollute history
+  if (-not $title -or (-not $artist -and $title -match '^(Advertisement|Spotify|Anuncio)$')) {
+    return @{ ok = $true; active = $false; fullscreen = $fs }
+  }
   $playing = ($pi.PlaybackStatus -eq 'Playing')
   $pos = $tl.Position.TotalSeconds
   if ($playing -and $tl.LastUpdatedTime.Year -gt 2000) {
@@ -131,10 +138,11 @@ function Search-YouTube($q) {
   if ($ytCache.ContainsKey($q)) { return $ytCache[$q] }
   $url = 'https://www.youtube.com/results?sp=EgIQAQ%253D%253D&search_query=' + [uri]::EscapeDataString($q)
   $r = Invoke-WebRequest -UseBasicParsing $url -Headers @{ 'Accept-Language' = 'en-US,en;q=0.8' } -TimeoutSec 8
-  $ids = @([regex]::Matches($r.Content, '"videoId":"([\w-]{11})"') | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique | Select-Object -First 6)
+  $html = try { [Text.Encoding]::UTF8.GetString($r.RawContentStream.ToArray()) } catch { $r.Content }
+  $ids = @([regex]::Matches($html, '"videoId":"([\w-]{11})"') | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique | Select-Object -First 6)
   # titles + channel for the search panel (raw JSON-escaped strings; the page decodes them)
   $items = @()
-  $chunks = $r.Content -split '"videoRenderer":\{', 10
+  $chunks = $html -split '"videoRenderer":\{', 10
   for ($i = 1; $i -lt $chunks.Count -and $items.Count -lt 8; $i++) {
     $c = $chunks[$i]; if ($c.Length -gt 12000) { $c = $c.Substring(0, 12000) }
     $id = [regex]::Match($c, '^"videoId":"([\w-]{11})"')
@@ -145,7 +153,7 @@ function Search-YouTube($q) {
     if ($id.Success -and $ti.Success) { $items += @{ id = $id.Groups[1].Value; title = $ti.Groups[1].Value; channel = $ch.Groups[1].Value; dur = $sec } }
   }
   $res = @{ ok = $true; ids = $ids; items = $items }
-  $ytCache[$q] = $res
+  if ($ids.Count -gt 0) { $ytCache[$q] = $res }
   return $res
 }
 
@@ -288,6 +296,19 @@ function Send($ctx, $code, $type, [byte[]]$bytes) {
 }
 function SendJson($ctx, $obj) { Send $ctx 200 'application/json; charset=utf-8' ([Text.Encoding]::UTF8.GetBytes(($obj | ConvertTo-Json -Compress -Depth 5))) }
 
+function Parse-Query([string]$qs) {
+  $h = @{}
+  if (-not $qs) { return $h }
+  foreach ($pair in $qs.TrimStart('?').Split('&')) {
+    if (-not $pair) { continue }
+    $kv = $pair.Split('=', 2)
+    $k = [uri]::UnescapeDataString(($kv[0] -replace '\+', ' '))
+    $v = if ($kv.Count -gt 1) { [uri]::UnescapeDataString(($kv[1] -replace '\+', ' ')) } else { '' }
+    $h[$k] = $v
+  }
+  return $h
+}
+
 $listener = New-Object Net.HttpListener
 $listener.Prefixes.Add("http://localhost:$Port/")
 $listener.Start()
@@ -297,7 +318,7 @@ while ($listener.IsListening) {
   try {
     $req = $ctx.Request
     if ($req.HttpMethod -eq 'OPTIONS') { Send $ctx 204 'text/plain' ([byte[]]@()); continue }
-    $q = $req.QueryString
+    $q = Parse-Query $req.Url.Query
     switch ($req.Url.AbsolutePath) {
       '/status' { SendJson $ctx (Get-Status) }
       '/cmd'    { SendJson $ctx (Invoke-Cmd $q['a'] $q) }

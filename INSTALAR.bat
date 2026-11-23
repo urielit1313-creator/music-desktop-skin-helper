@@ -38,7 +38,7 @@ if not exist "%~dp0musicskin-helper.ps1" (
 set "DEST=%LOCALAPPDATA%\MusicSkin\helper"
 
 echo   [1/4] Instalando el ayudante...
-powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='powershell.exe'\" | Where-Object { $_.CommandLine -like '*musicskin-helper.ps1*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }" >nul 2>nul
+powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='powershell.exe'\" | Where-Object { $_.ProcessId -ne $PID -and $_.CommandLine -like '*-File*musicskin-helper.ps1*' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }" >nul 2>nul
 if not exist "%DEST%" mkdir "%DEST%"
 copy /y "%~dp0*.ps1" "%DEST%\" >nul
 copy /y "%~dp0*.html" "%DEST%\" >nul
@@ -52,10 +52,10 @@ echo         OK
 
 where winget >nul 2>nul
 if errorlevel 1 (
-  echo   [2/4] [!] Tu Windows no tiene "winget" ^(Instalador de aplicaciones^).
-  echo         Letras, lista y controles SI funcionan.
-  echo         Para los videos: instala "Instalador de aplicacion" desde
-  echo         Microsoft Store y vuelve a abrir INSTALAR.bat.
+  echo   [2/4] Video HD: yt-dlp ^(descarga directa^)
+  call :ytdlp_direct
+  echo   [3/4] [!] Tu Windows no tiene "winget" ^(para instalar FFmpeg^).
+  echo         Letras, lista, controles y videos SI funcionan.
   goto start
 )
 echo   [2/4] Video HD: yt-dlp
@@ -103,10 +103,22 @@ exit /b
 :tool
 where %1 >nul 2>nul && (echo         OK ^(ya estaba instalado^) & exit /b)
 if exist "%LOCALAPPDATA%\Microsoft\WinGet\Links\%1.exe" (echo         OK ^(ya estaba instalado^) & exit /b)
+if exist "%LOCALAPPDATA%\MusicSkin\bin\%1.exe" (echo         OK ^(ya estaba instalado^) & exit /b)
+powershell -NoProfile -Command "if(Get-ChildItem \"$env:LOCALAPPDATA\Microsoft\WinGet\Packages\" -Recurse -Filter '%1.exe' -EA SilentlyContinue | Select-Object -First 1){exit 0}else{exit 1}" >nul 2>nul && (echo         OK ^(ya estaba instalado^) & exit /b)
 winget install --id %2 -e --silent --accept-package-agreements --accept-source-agreements --disable-interactivity >nul 2>nul
 if exist "%LOCALAPPDATA%\Microsoft\WinGet\Links\%1.exe" (echo         OK, instalado & exit /b)
 where %1 >nul 2>nul && (echo         OK, instalado & exit /b)
 if exist "%ProgramFiles%\WinGet\Links\%1.exe" (echo         OK, instalado & exit /b)
+powershell -NoProfile -Command "if(Get-ChildItem \"$env:LOCALAPPDATA\Microsoft\WinGet\Packages\" -Recurse -Filter '%1.exe' -EA SilentlyContinue | Select-Object -First 1){exit 0}else{exit 1}" >nul 2>nul && (echo         OK, instalado & exit /b)
+if /i "%1"=="yt-dlp" goto ytdlp_direct
 echo         [!] No se pudo instalar. Letras, lista y controles SI funcionan.
 echo             Revisa tu internet y vuelve a abrir INSTALAR.bat para los videos.
+exit /b
+
+:ytdlp_direct
+if exist "%LOCALAPPDATA%\MusicSkin\bin\yt-dlp.exe" (echo         OK ^(ya estaba instalado^) & exit /b)
+if not exist "%LOCALAPPDATA%\MusicSkin\bin" mkdir "%LOCALAPPDATA%\MusicSkin\bin"
+powershell -NoProfile -Command "[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -UseBasicParsing 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe' -OutFile \"$env:LOCALAPPDATA\MusicSkin\bin\yt-dlp.exe\" -TimeoutSec 45" >nul 2>nul
+if exist "%LOCALAPPDATA%\MusicSkin\bin\yt-dlp.exe" (echo         OK, instalado & exit /b)
+echo         [!] No se pudo instalar yt-dlp. Revisa tu internet y vuelve a abrir INSTALAR.bat.
 exit /b
