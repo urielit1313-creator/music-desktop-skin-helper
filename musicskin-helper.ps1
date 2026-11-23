@@ -31,19 +31,26 @@ public static class MSScreen {
   [DllImport("user32.dll")] static extern bool GetMonitorInfo(IntPtr m, ref MONITORINFO i);
   [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr h, System.Text.StringBuilder s, int n);
   [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
+  [DllImport("user32.dll")] static extern bool IsIconic(IntPtr h);
   [DllImport("user32.dll")] static extern bool IsZoomed(IntPtr h);
   [DllImport("user32.dll")] static extern int GetWindowLong(IntPtr h, int i);
+  [DllImport("shell32.dll")] static extern int SHQueryUserNotificationState(out int state);
   public static bool Fullscreen() {
-    IntPtr h = GetForegroundWindow(); if (h == IntPtr.Zero || !IsWindowVisible(h)) return false;
+    // Direct3D/Vulkan exclusive fullscreen games (3) or presentation mode (4)
+    int q = 0;
+    try { if (SHQueryUserNotificationState(out q) == 0 && (q == 3 || q == 4)) return true; } catch {}
+    IntPtr h = GetForegroundWindow(); if (h == IntPtr.Zero || !IsWindowVisible(h) || IsIconic(h)) return false;
     var sb = new System.Text.StringBuilder(64); GetClassName(h, sb, 64); string c = sb.ToString();
-    if (c == "Progman" || c == "WorkerW" || c == "Shell_TrayWnd" || c == "Shell_SecondaryTrayWnd") return false; // the desktop itself
-    // a maximized window (title bar, taskbar visible) is not fullscreen: only borderless windows that cover the monitor are
-    if (IsZoomed(h)) return false;
-    if ((GetWindowLong(h, -16) & 0x00C00000) == 0x00C00000) return false;
+    if (c == "Progman" || c == "WorkerW" || c == "Shell_TrayWnd" || c == "Shell_SecondaryTrayWnd" || c == "Shell_InputSwitchTopLevelWindow" || c == "TaskListThumbnailWnd") return false;
     RECT r; if (!GetWindowRect(h, out r)) return false;
     var mi = new MONITORINFO(); mi.cb = Marshal.SizeOf(mi);
     if (!GetMonitorInfo(MonitorFromWindow(h, 2), ref mi)) return false;
-    return r.L <= mi.rc.L && r.T <= mi.rc.T && r.R >= mi.rc.R && r.B >= mi.rc.B;
+    // Covers the entire monitor (including taskbar): matches YouTube/VLC/F11 fullscreen and borderless games
+    if (!(r.L <= mi.rc.L && r.T <= mi.rc.T && r.R >= mi.rc.R && r.B >= mi.rc.B)) return false;
+    // If the taskbar is auto-hidden (work == rc), ignore normal maximized windows with a title bar
+    bool hasTaskbar = mi.work.L > mi.rc.L || mi.work.T > mi.rc.T || mi.work.R < mi.rc.R || mi.work.B < mi.rc.B;
+    if (!hasTaskbar && IsZoomed(h) && (GetWindowLong(h, -16) & 0x00C00000) == 0x00C00000) return false;
+    return true;
   }
 }
 "@
