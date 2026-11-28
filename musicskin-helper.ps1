@@ -160,7 +160,10 @@ function Search-YouTube($q) {
     if ($id.Success -and $ti.Success) { $items += @{ id = $id.Groups[1].Value; title = $ti.Groups[1].Value; channel = $ch.Groups[1].Value; dur = $sec } }
   }
   $res = @{ ok = $true; ids = $ids; items = $items }
-  if ($ids.Count -gt 0) { $ytCache[$q] = $res }
+  if ($ids.Count -gt 0) {
+    if ($ytCache.Count -ge 80) { $ytCache.Clear() }
+    $ytCache[$q] = $res
+  }
   return $res
 }
 
@@ -181,6 +184,9 @@ try { $WsRoot = (Resolve-Path $WsRoot -ErrorAction Stop).Path } catch { $WsRoot 
 $SelfDir = (Resolve-Path (Join-Path $Root '..')).Path
 $CacheDir = Join-Path $env:LOCALAPPDATA 'MusicSkin\webm'
 $null = New-Item -ItemType Directory -Force $CacheDir
+# Remove expired YouTube URL JSON caches (>24h) and legacy low-quality (non-hq) WebM files on startup
+Get-ChildItem -LiteralPath $CacheDir -Filter '*.json' -ErrorAction SilentlyContinue | Where-Object { ((Get-Date) - $_.LastWriteTime).TotalHours -gt 24 } | Remove-Item -Force -ErrorAction SilentlyContinue
+Get-ChildItem -LiteralPath $CacheDir -Filter '*.webm' -ErrorAction SilentlyContinue | Where-Object { $_.Name -notlike 'hq-*' } | Remove-Item -Force -ErrorAction SilentlyContinue
 # tools installed by INSTALAR (winget) may not be on this process's PATH yet: also look where winget puts them
 function Find-Tool($n) {
   $c = (Get-Command $n -ErrorAction SilentlyContinue).Source; if ($c) { return $c }
@@ -192,14 +198,16 @@ $Ffmpeg = Find-Tool ffmpeg
 $Converting = @{}
 $Ytdlp = Find-Tool yt-dlp
 $MvJobs = @{}; $SubJobs = @{}
-function Start-Webm($src, $dst) {
-  if ($Converting[$dst]) { return }
-  $Converting[$dst] = $true
+function Start-Webm($src, $dst, [int]$maxW = 1920) {
+  $cur = $Converting[$dst]
+  if ($cur -and -not $cur.HasExited) { return }
+  if ($maxW -lt 1280 -or $maxW -gt 2560) { $maxW = 1920 }
   $part = "$dst.part"
-  # one video at a time is enough; low priority so the PC stays smooth
-  $al = "/c `"`"$Ffmpeg`" -y -loglevel error -i `"$src`" -an -vf `"scale='min(1920,iw)':-2`" -c:v libvpx-vp9 -deadline good -cpu-used 5 -row-mt 1 -b:v 0 -crf 28 -f webm `"$part`" && move /y `"$part`" `"$dst`"`""
+  # Crisp high-quality VP9 (CRF 16 + Lanczos scaling) so video wallpapers look sharp like the original MP4
+  $al = "/c `"`"$Ffmpeg`" -y -loglevel error -i `"$src`" -an -vf `"scale='min($maxW,iw)':-2:flags=lanczos`" -c:v libvpx-vp9 -pix_fmt yuv420p -deadline good -cpu-used 3 -row-mt 1 -tile-columns 2 -b:v 0 -crf 16 -f webm `"$part`" && move /y `"$part`" `"$dst`"`""
   $p = Start-Process cmd.exe -ArgumentList $al -WindowStyle Hidden -PassThru
   try { $p.PriorityClass = 'BelowNormal' } catch {}
+  $Converting[$dst] = $p
 }
 function Get-Wallpapers {
   $out = @()
@@ -213,18 +221,18 @@ function Get-Wallpapers {
     try { $j = Get-Content $pj -Raw -Encoding UTF8 | ConvertFrom-Json } catch { continue }
     if ("$($j.title)" -like 'Music Desktop Skin*') { continue }   # don't list this skin inside itself
     $type = "$($j.type)".ToLower()
+    if ($type -eq 'scene') { continue }   # .pkg scenes only have a tiny 256x256 preview (pixelated if stretched)
     $prev = if ($j.preview) { Join-Path $d.FullName $j.preview } else { '' }
     $file = if ($j.file) { Join-Path $d.FullName $j.file } else { '' }
-    if ($type -eq 'scene') { $file = $prev }          # scenes can't be embedded: use their animated preview
     if (-not $file -or -not (Test-Path -LiteralPath $file)) { continue }
     $base = if ($d.FullName.StartsWith($WsRoot, [StringComparison]::OrdinalIgnoreCase) -and $WsRoot) { 'ws' } else { 'my' }
     $rel = { param($f) if ($f) { $f.Substring($d.FullName.Length + 1).Replace('\', '/') } else { '' } }
     $item = @{ id = $d.Name; base = $base; title = "$($j.title)"; type = $type; file = (& $rel $file); preview = (& $rel $prev) }
-    # Wallpaper Engine's built-in browser can't play MP4 (H.264). Make a WebM copy once (needs ffmpeg) and use it.
+    # Wallpaper Engine's built-in browser can't play MP4 (H.264). Make a high-quality WebM copy once (needs ffmpeg) and use it.
     if ($type -eq 'video' -and $file -notmatch '\.webm$') {
-      $wm = Join-Path $CacheDir ("$($d.Name).webm")
-      if (Test-Path -LiteralPath $wm) { $item.webm = "cache/$($d.Name).webm" }
-      elseif ($Converting[$wm]) { $item.converting = $true }
+      $wm = Join-Path $CacheDir ("hq-$($d.Name).webm")
+      if (Test-Path -LiteralPath $wm) { $item.webm = "cache/hq-$($d.Name).webm" }
+      elseif ($Converting[$wm] -and -not $Converting[$wm].HasExited) { $item.converting = $true }
       $item.canconvert = [bool]$Ffmpeg
     }
     $out += $item
@@ -397,15 +405,16 @@ while ($listener.IsListening) {
       }
       '/diag'   { if ($q['d']) { $script:Diag = "$($q['d'])" }; Send $ctx 200 'application/json; charset=utf-8' ([Text.Encoding]::UTF8.GetBytes($(if ($script:Diag) { $script:Diag } else { '{}' }))) }
       '/prepare' {
-        # make the WebM copy of one video wallpaper (only the one the person picked)
+        # make the high-quality WebM copy of one video wallpaper (only the one the person picked)
         $id = "$($q['id'])"; $ok = $false
+        $mw = 1920; if ("$($q['w'])" -match '^(1920|2560)$') { $mw = [int]$q['w'] }
         if ($Ffmpeg -and $id -match '^[\w-]+$') {
           $baseDir = if ($q['base'] -eq 'ws') { $WsRoot } else { Join-Path $WeRoot 'projects\myprojects' }
           $d = Join-Path $baseDir $id; $pj = Join-Path $d 'project.json'
           if (Test-Path -LiteralPath $pj) {
             $j = Get-Content $pj -Raw -Encoding UTF8 | ConvertFrom-Json
             $src = Join-Path $d "$($j.file)"
-            if ((Test-Allowed $src) -and (Test-Path -LiteralPath $src)) { Start-Webm $src (Join-Path $CacheDir "$id.webm"); $ok = $true }
+            if ((Test-Allowed $src) -and (Test-Path -LiteralPath $src)) { Start-Webm $src (Join-Path $CacheDir "hq-$id.webm") $mw; $ok = $true }
           }
         }
         SendJson $ctx @{ ok = $ok }
